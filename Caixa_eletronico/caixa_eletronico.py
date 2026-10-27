@@ -1,13 +1,51 @@
 import tkinter as tk
 from tkinter import messagebox
 import os
+import json
+import hashlib
+import hmac
+import secrets
 
 
 # O arquivo fica na mesma pasta do código, mesmo abrindo por outro lugar
 arquivo_saldos = os.path.join(os.path.dirname(os.path.abspath(__file__)), "saldos.txt")
 conta_atual = ""
 saldo = 1000
-COR_BEGE = "#F5F5DC"
+COR_BEGE = "#101B2D"
+COR_CARTAO = "#192840"
+COR_TEXTO = "#EAF0F8"
+COR_DESTAQUE = "#34D399"
+arquivo_senhas = os.path.join(os.path.dirname(os.path.abspath(__file__)), "senhas.json")
+
+
+def validar_senha(conta, senha, confirmacao):
+    try:
+        with open(arquivo_senhas, "r", encoding="utf-8") as f:
+            senhas = json.load(f)
+    except FileNotFoundError:
+        senhas = {}
+
+    if conta in senhas:
+        registro = senhas[conta]
+        resumo = hashlib.pbkdf2_hmac("sha256", senha.encode("utf-8"),
+                                      bytes.fromhex(registro["sal"]), 600000).hex()
+        if not hmac.compare_digest(resumo, registro["hash"]):
+            messagebox.showerror("Acesso negado", "Senha incorreta para esta conta.")
+            return False
+    else:
+        if senha != confirmacao:
+            messagebox.showerror("Senhas diferentes", "Digite a mesma senha nos dois campos para cadastrar a conta.")
+            return False
+        sal = secrets.token_bytes(16)
+        senhas[conta] = {
+            "sal": sal.hex(),
+            "hash": hashlib.pbkdf2_hmac("sha256", senha.encode("utf-8"), sal, 600000).hex()
+        }
+        temporario = arquivo_senhas + ".tmp"
+        with open(temporario, "w", encoding="utf-8") as f:
+            json.dump(senhas, f, indent=2)
+        os.replace(temporario, arquivo_senhas)
+    return True
 
 
 # LEITURA E ESCRITA DO ARQUIVO
@@ -46,7 +84,7 @@ def entrar():
     global conta_atual, saldo
 
     conta = entry_conta.get().strip()
-    senha = entry_senha.get().strip()
+    senha = entry_senha.get()
 
     if not conta or not senha:
         messagebox.showerror("Erro", "Preencha a conta e a senha.")
@@ -184,6 +222,7 @@ def sair():
     entry_senha.delete(0, tk.END)
     entry_valor.delete(0, tk.END)
     entry_opcao.delete(0, tk.END)
+    entry_confirmacao.delete(0, tk.END)
     entry_conta.focus_set()
 
 
@@ -215,7 +254,7 @@ def fechar_janela():
 
 root = tk.Tk()
 root.title("Simulador de Caixa Eletrônico")
-root.geometry("520x650")
+root.geometry("580x800")
 root.resizable(False, False)
 root.config(bg=COR_BEGE)
 root.protocol("WM_DELETE_WINDOW", fechar_janela)
@@ -229,7 +268,7 @@ label_titulo.pack(pady=20)
 frame_login = tk.Frame(root, bg=COR_BEGE)
 frame_login.pack(pady=25)
 
-label_boas_vindas = tk.Label(frame_login, text="Bem-vindo! Informe sua conta e senha.", bg=COR_BEGE)
+label_boas_vindas = tk.Label(frame_login, text="Bem-vindo ao seu caixa digital", bg=COR_BEGE)
 label_boas_vindas.pack(pady=10)
 
 label_conta_login = tk.Label(frame_login, text="Conta:", bg=COR_BEGE)
@@ -241,6 +280,11 @@ label_senha = tk.Label(frame_login, text="Senha:", bg=COR_BEGE)
 label_senha.pack(pady=5)
 entry_senha = tk.Entry(frame_login, show="*", width=28)
 entry_senha.pack(pady=5)
+
+tk.Label(frame_login, text="Confirme a senha (somente no primeiro acesso):", bg=COR_BEGE).pack(pady=(15, 5))
+entry_confirmacao = tk.Entry(frame_login, show="*", width=28)
+entry_confirmacao.pack(pady=5)
+tk.Label(frame_login, text="Conta nova? Escolha uma senha e repita acima.\nConta existente? Use a senha cadastrada.", bg=COR_BEGE).pack(pady=12)
 
 botao_entrar = tk.Button(frame_login, text="Entrar", width=15, command=entrar)
 botao_entrar.pack(pady=20)
@@ -280,5 +324,28 @@ botao_executar.pack(pady=5)
 label_resultado = tk.Label(frame_menu, text="", bg=COR_BEGE, font=("Arial", 11), justify="left", wraplength=460)
 label_resultado.pack(pady=15)
 
+def aplicar_estilo(widget):
+    for filho in widget.winfo_children():
+        if isinstance(filho, tk.Label):
+            filho.configure(fg=COR_TEXTO, font=("Segoe UI", 11))
+        elif isinstance(filho, tk.Entry):
+            filho.configure(bg=COR_CARTAO, fg=COR_TEXTO, insertbackground=COR_DESTAQUE,
+                            relief="flat", font=("Segoe UI", 13),
+                            highlightthickness=1, highlightbackground="#34465F",
+                            highlightcolor=COR_DESTAQUE)
+        elif isinstance(filho, tk.Button):
+            filho.configure(bg=COR_DESTAQUE, fg="#102A24", activebackground="#6EE7B7",
+                            activeforeground="#102A24", relief="flat", bd=0,
+                            font=("Segoe UI", 11, "bold"), padx=12, pady=10,
+                            cursor="hand2")
+        aplicar_estilo(filho)
+
+
+aplicar_estilo(root)
+label_titulo.configure(fg=COR_DESTAQUE, font=("Segoe UI", 24, "bold"))
+label_resultado.configure(bg=COR_CARTAO, padx=18, pady=16, width=48)
+entry_senha.bind("<Return>", lambda event: entrar())
+entry_confirmacao.bind("<Return>", lambda event: entrar())
+entry_opcao.bind("<Return>", lambda event: executar_opcao())
 entry_conta.focus_set()
 root.mainloop()
